@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Clean Plate Challenge</title>
     
+    <!-- เพิ่มบรรทัดนี้: ป้องกันระบบมือถือบล็อกการดึงรูปภาพข้ามโดเมน -->
+    <meta name="referrer" content="no-referrer">
+    
     <!-- นำเข้า Tailwind CSS เพื่อจัดการความสวยงาม -->
     <script src="https://cdn.tailwindcss.com"></script>
     
@@ -54,7 +57,8 @@
             // ตรวจจับ ID ของรูปภาพจากลิงก์
             const driveIdMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/);
             if (driveIdMatch && driveIdMatch[1]) {
-                return `https://lh3.googleusercontent.com/d/${driveIdMatch[1]}`;
+                // เพิ่ม ?authuser=0 เพื่อป้องกันปัญหา Google บังคับให้ล็อกอินบนมือถือ
+                return `https://lh3.googleusercontent.com/d/${driveIdMatch[1]}?authuser=0`;
             }
             return url;
         };
@@ -359,13 +363,15 @@
                                         src={getSafeImageUrl(sub.imageUrl)} 
                                         alt="Clean Plate" 
                                         className="w-full h-56 object-cover bg-gray-200" 
-                                        loading="lazy" 
+                                        loading="lazy"
+                                        referrerPolicy="no-referrer" 
                                         onError={(e) => {
                                             // หากโหลดไม่ขึ้นในครั้งแรก (Drive กำลังเตรียมไฟล์) ให้ลองโหลดซ้ำ 1 ครั้ง
                                             if (!e.target.dataset.retried) {
                                                 e.target.dataset.retried = "true";
                                                 setTimeout(() => {
-                                                    e.target.src = getSafeImageUrl(sub.imageUrl);
+                                                    // เติมเวลาต่อท้ายเพื่อหลอกเบราว์เซอร์ไม่ให้ดึงแคชเดิมที่พังมาแสดง
+                                                    e.target.src = getSafeImageUrl(sub.imageUrl) + '&retry=' + new Date().getTime();
                                                 }, 2000);
                                             } else {
                                                 e.target.onerror = null; 
