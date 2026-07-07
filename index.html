@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Clean Plate Challenge</title>
+    
+    <!-- นำเข้า Tailwind CSS เพื่อจัดการความสวยงาม -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- นำเข้า React และ ReactDOM แบบ Standalone -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    
+    <!-- นำเข้า Babel เพื่ออ่านโค้ด JSX บนเบราว์เซอร์ -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        /* ซ่อน Scrollbar เพื่อให้ดูเหมือนแอปมือถือมากขึ้น */
+        ::-webkit-scrollbar { width: 0px; background: transparent; }
+        body { -webkit-tap-highlight-color: transparent; }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // --- ตั้งค่า URL ของ Google Apps Script ที่นี่ ---
+        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycby2XfQmSEfDALATZ00fEaZlF2ANrq-Vk9C6bjZHEd8NMUJw2gTr1elXSguyiq4uqxMijw/exec"; 
+
+        // --- ไอคอนต่างๆ (แปลงจาก lucide-react เพื่อให้ใช้ในไฟล์เดียวได้) ---
+        const IconUtensils = ({className}) => <svg className={className} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg>;
+        const IconCamera = ({className}) => <svg className={className} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>;
+        const IconLeaf = ({className}) => <svg className={className} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg>;
+        const IconUpload = ({className}) => <svg className={className} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>;
+        const IconTrophy = ({className}) => <svg className={className} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7c0 3.31 2.69 6 6 6s6-2.69 6-6V2Z"/></svg>;
+        const IconUserCircle = ({className}) => <svg className={className} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="10" r="3"/><path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662"/></svg>;
+        const IconHome = ({className}) => <svg className={className} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>;
+        const IconAward = ({className}) => <svg className={className} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/></svg>;
+        const IconRefreshCw = ({className}) => <svg className={className} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>;
+
+        function App() {
+            const [user, setUser] = useState(null);
+            const [profile, setProfile] = useState({ displayName: 'พนักงานนิรนาม', points: 0 });
+            const [activeTab, setActiveTab] = useState('home');
+            const [leaderboard, setLeaderboard] = useState([]);
+            const [submissions, setSubmissions] = useState([]);
+            const [isUploading, setIsUploading] = useState(false);
+            const [isLoading, setIsLoading] = useState(true);
+            const [editName, setEditName] = useState('');
+            const [saveStatus, setSaveStatus] = useState('');
+            
+            const fileInputRef = useRef(null);
+
+            const isMockMode = GAS_WEB_APP_URL.includes("YOUR_SCRIPT_ID") || !GAS_WEB_APP_URL;
+
+            // จำลองการเข้าสู่ระบบ
+            useEffect(() => {
+                let storedUid = localStorage.getItem('clean_plate_uid');
+                if (!storedUid) {
+                    storedUid = 'emp_' + Math.random().toString(36).substring(2, 10);
+                    localStorage.setItem('clean_plate_uid', storedUid);
+                }
+                setUser({ uid: storedUid });
+                setProfile(prev => ({ ...prev, displayName: `พนักงาน_${storedUid.substring(4, 8)}` }));
+            }, []);
+
+            const fetchData = async () => {
+                if (!user) return;
+                setIsLoading(true);
+                
+                if (isMockMode) {
+                    setTimeout(() => {
+                        setLeaderboard([
+                            { uid: 'mock1', displayName: 'สมหญิง บัญชี', points: 150 },
+                            { uid: user.uid, displayName: profile.displayName, points: profile.points || 0 },
+                            { uid: 'mock2', displayName: 'มานะ ไอที', points: 80 }
+                        ].sort((a, b) => b.points - a.points));
+                        
+                        if (submissions.length === 0) {
+                            setSubmissions([
+                                { uid: 'mock1', displayName: 'สมหญิง บัญชี', imageUrl: 'https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&q=80&w=600', timestamp: Date.now() - 3600000 }
+                            ]);
+                        }
+                        setIsLoading(false);
+                    }, 500);
+                    return;
+                }
+
+                try {
+                    const response = await fetch(`${GAS_WEB_APP_URL}?uid=${user.uid}`);
+                    const data = await response.json();
+                    
+                    if (data.users) {
+                        setLeaderboard(data.users.sort((a, b) => b.points - a.points));
+                        const myProfile = data.users.find(u => u.uid === user.uid);
+                        if (myProfile) {
+                            setProfile(myProfile);
+                            if (!editName) setEditName(myProfile.displayName);
+                        }
+                    }
+                    
+                    if (data.submissions) {
+                        setSubmissions(data.submissions.sort((a, b) => b.timestamp - a.timestamp));
+                    }
+                } catch (error) {
+                    console.error("Error fetching data:", error);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            useEffect(() => {
+                if (user) {
+                    fetchData();
+                }
+            }, [user]);
+
+            const handleImageUpload = (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                setIsUploading(true);
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = async () => {
+                        const canvas = document.createElement('canvas');
+                        const MAX_WIDTH = 600;
+                        let scaleSize = 1;
+                        if (img.width > MAX_WIDTH) {
+                            scaleSize = MAX_WIDTH / img.width;
+                        }
+                        canvas.width = img.width * scaleSize;
+                        canvas.height = img.height * scaleSize;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        
+                        const base64Full = canvas.toDataURL('image/jpeg', 0.6);
+                        const base64Data = base64Full.split(',')[1]; 
+
+                        if (isMockMode) {
+                            setTimeout(() => {
+                                const newPoints = (profile.points || 0) + 10;
+                                setProfile(prev => ({ ...prev, points: newPoints }));
+                                setSubmissions(prev => [{
+                                    uid: user.uid,
+                                    displayName: profile.displayName,
+                                    imageUrl: base64Full,
+                                    timestamp: Date.now()
+                                }, ...prev]);
+                                
+                                setLeaderboard(prev => {
+                                    const newLb = prev.filter(p => p.uid !== user.uid);
+                                    newLb.push({ uid: user.uid, displayName: profile.displayName, points: newPoints });
+                                    return newLb.sort((a, b) => b.points - a.points);
+                                });
+                                
+                                setIsUploading(false);
+                                setActiveTab('home');
+                            }, 1000);
+                            return;
+                        }
+
+                        try {
+                            const payload = {
+                                action: 'submit',
+                                uid: user.uid,
+                                displayName: profile.displayName,
+                                image: base64Data,
+                                mimeType: 'image/jpeg',
+                                filename: `plate_${Date.now()}.jpg`
+                            };
+
+                            await fetch(GAS_WEB_APP_URL, {
+                                method: 'POST',
+                                body: JSON.stringify(payload),
+                                headers: { 'Content-Type': 'text/plain;charset=utf-8' } 
+                            });
+
+                            await fetchData();
+                            setActiveTab('home');
+                        } catch (error) {
+                            console.error("Upload failed", error);
+                            alert("เกิดข้อผิดพลาดในการส่งรูป กรุณาลองใหม่");
+                        } finally {
+                            setIsUploading(false);
+                        }
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            };
+
+            const saveProfileName = async () => {
+                if (!user || !editName.trim()) return;
+                
+                if (isMockMode) {
+                    setProfile(prev => ({ ...prev, displayName: editName.trim() }));
+                    setLeaderboard(prev => prev.map(p => p.uid === user.uid ? { ...p, displayName: editName.trim() } : p));
+                    setSaveStatus('บันทึกชื่อสำเร็จ (ทดสอบ)!');
+                    setTimeout(() => setSaveStatus(''), 3000);
+                    return;
+                }
+
+                try {
+                    const payload = {
+                        action: 'updateProfile',
+                        uid: user.uid,
+                        displayName: editName.trim()
+                    };
+
+                    await fetch(GAS_WEB_APP_URL, {
+                        method: 'POST',
+                        body: JSON.stringify(payload),
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' }
+                    });
+
+                    setSaveStatus('บันทึกชื่อสำเร็จ!');
+                    setProfile(prev => ({ ...prev, displayName: editName.trim() }));
+                    await fetchData();
+                    setTimeout(() => setSaveStatus(''), 3000);
+                } catch (error) {
+                    console.error("Save name failed", error);
+                    setSaveStatus('เกิดข้อผิดพลาด กรุณาลองใหม่');
+                    setTimeout(() => setSaveStatus(''), 3000);
+                }
+            };
+
+            // --- ส่วนของ UI (หน้าตาแอป) ---
+            const renderHome = () => (
+                <div className="p-4 space-y-6">
+                    {isMockMode && (
+                        <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-xl text-sm font-medium">
+                        ⚠️ กำลังใช้งานในโหมดทดลอง (เนื่องจากยังไม่ได้ใส่ Google Apps Script URL)
+                        </div>
+                    )}
+                    
+                    <div className="bg-white rounded-xl p-5 shadow-sm border border-green-100 flex items-center gap-4">
+                        <div className="bg-green-100 p-3 rounded-full text-green-600">
+                        <IconUtensils className="w-8 h-8" />
+                        </div>
+                        <div>
+                        <h2 className="font-bold text-gray-800">กินหมดจาน ลดขยะอาหาร</h2>
+                        <p className="text-sm text-gray-500">ร่วมสร้างความยั่งยืนไปด้วยกัน ♻️🌱</p>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div className="flex justify-between items-center mb-3">
+                        <h3 className="font-bold text-gray-700 flex items-center gap-2">
+                            <IconCamera className="w-5 h-5 text-green-600" /> ภาพถ่ายล่าสุด
+                        </h3>
+                        <button onClick={fetchData} className="text-gray-400 hover:text-green-600 active:rotate-180 transition-transform">
+                            <IconRefreshCw className={`w-5 h-5 ${isLoading ? 'animate-spin text-green-500' : ''}`} />
+                        </button>
+                        </div>
+
+                        <div className="space-y-4">
+                        {submissions.length === 0 && !isLoading ? (
+                            <div className="text-center py-8 bg-white rounded-xl border border-dashed border-gray-300">
+                            <p className="text-gray-500">ยังไม่มีภาพถ่าย มาร่วมเป็นคนแรกสิ!</p>
+                            </div>
+                        ) : (
+                            submissions.map((sub, idx) => (
+                            <div key={idx} className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100">
+                                <div className="p-3 flex items-center gap-2 border-b border-gray-50">
+                                <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center text-green-700 font-bold text-xs uppercase">
+                                    {sub.displayName?.charAt(0) || '?'}
+                                </div>
+                                <div>
+                                    <p className="font-medium text-sm text-gray-800">{sub.displayName}</p>
+                                    <p className="text-xs text-gray-400">
+                                    {new Date(sub.timestamp).toLocaleString('th-TH')}
+                                    </p>
+                                </div>
+                                </div>
+                                <img src={sub.imageUrl} alt="Clean Plate" className="w-full h-56 object-cover bg-gray-100" loading="lazy" />
+                                <div className="p-3 bg-green-50 text-green-800 text-sm font-medium flex items-center justify-center gap-1">
+                                <IconLeaf className="w-4 h-4" /> ได้รับ 10 แต้มรักษ์โลก!
+                                </div>
+                            </div>
+                            ))
+                        )}
+                        </div>
+                    </div>
+                </div>
+            );
+
+            const renderSubmit = () => (
+                <div className="p-6 flex flex-col items-center justify-center h-full text-center space-y-6">
+                    <div className="bg-green-100 p-6 rounded-full text-green-600 mb-2">
+                        <IconUpload className="w-16 h-16" />
+                    </div>
+                    <div>
+                        <h2 className="text-xl font-bold text-gray-800">ส่งภาพถ่ายจานเปล่า</h2>
+                        <p className="text-gray-500 mt-2 text-sm">
+                        ถ่ายภาพจานอาหารที่คุณทานหมดเกลี้ยง<br/>เพื่อยืนยันและรับ 10 แต้มสะสม!
+                        </p>
+                    </div>
+
+                    <input 
+                        type="file" 
+                        accept="image/*" 
+                        capture="environment"
+                        className="hidden" 
+                        ref={fileInputRef}
+                        onChange={handleImageUpload}
+                        disabled={isUploading}
+                    />
+                    
+                    <button 
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isUploading}
+                        className="w-full max-w-xs bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-green-200 transition-transform active:scale-95 flex items-center justify-center gap-2 disabled:opacity-70 disabled:active:scale-100"
+                    >
+                        {isUploading ? (
+                        <>
+                            <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
+                            กำลังบันทึกข้อมูล...
+                        </>
+                        ) : (
+                        <>
+                            <IconCamera className="w-6 h-6" /> ถ่ายภาพ / อัปโหลดรูป
+                        </>
+                        )}
+                    </button>
+
+                    {isMockMode && (
+                        <p className="text-xs text-yellow-600 bg-yellow-50 p-2 rounded border border-yellow-200">
+                        โหมดทดลอง: อัปโหลดรูปจะถูกจำลองขึ้นเพื่อให้คุณทดสอบได้
+                        </p>
+                    )}
+                </div>
+            );
+
+            const renderLeaderboard = () => (
+                <div className="p-4 space-y-4">
+                    <div className="bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl p-6 text-white text-center shadow-md">
+                        <IconTrophy className="w-12 h-12 mx-auto mb-2 text-yellow-300" />
+                        <h2 className="text-xl font-bold">กระดานผู้นำ</h2>
+                        <p className="opacity-90 text-sm">ใครคือสุดยอดนักรักษ์โลกประจำเดือนนี้?</p>
+                    </div>
+
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                        {leaderboard.length === 0 && !isLoading && <p className="text-center p-6 text-gray-500">ยังไม่มีข้อมูลคะแนน</p>}
+                        {leaderboard.map((u, index) => (
+                        <div key={u.uid} className={`flex items-center p-4 border-b border-gray-50 last:border-0 ${user?.uid === u.uid ? 'bg-green-50' : ''}`}>
+                            <div className="w-8 font-bold text-gray-400 text-center">
+                            {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`}
+                            </div>
+                            <div className="flex-1 ml-2">
+                            <p className={`font-medium ${user?.uid === u.uid ? 'text-green-700' : 'text-gray-800'}`}>
+                                {u.displayName} {user?.uid === u.uid && '(คุณ)'}
+                            </p>
+                            </div>
+                            <div className="font-bold text-green-600 flex items-center gap-1">
+                            {u.points || 0} <span className="text-xs font-normal text-gray-500">แต้ม</span>
+                            </div>
+                        </div>
+                        ))}
+                    </div>
+                </div>
+            );
+
+            const renderProfile = () => (
+                <div className="p-4 space-y-6">
+                    <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 text-center relative overflow-hidden">
+                        <div className="absolute top-0 left-0 w-full h-16 bg-green-50"></div>
+                        <div className="relative w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl font-bold border-4 border-white shadow-sm uppercase">
+                        {profile.displayName?.charAt(0) || '?'}
+                        </div>
+                        <h2 className="text-xl font-bold text-gray-800 mb-1">{profile.displayName}</h2>
+                        <p className="text-green-600 font-medium bg-green-50 inline-block px-3 py-1 rounded-full">{profile.points || 0} แต้มสะสม</p>
+                    </div>
+
+                    <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 space-y-4">
+                        <h3 className="font-bold text-gray-700">ตั้งค่าโปรไฟล์</h3>
+                        
+                        <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1">ชื่อที่แสดงในระบบ</label>
+                        <input 
+                            type="text" 
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                            className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition-all"
+                            placeholder="เช่น สมชาย บัญชี"
+                        />
+                        </div>
+                        
+                        <button 
+                        onClick={saveProfileName}
+                        className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3 rounded-lg transition-colors shadow-sm"
+                        >
+                        บันทึกข้อมูล
+                        </button>
+                        
+                        {saveStatus && (
+                        <p className={`text-center text-sm font-medium ${saveStatus.includes('สำเร็จ') ? 'text-green-600' : 'text-red-500'}`}>
+                            {saveStatus}
+                        </p>
+                        )}
+                    </div>
+                </div>
+            );
+
+            const NavItem = ({ id, icon: Icon, label }) => {
+                const isActive = activeTab === id;
+                return (
+                <button 
+                    onClick={() => setActiveTab(id)}
+                    className={`flex flex-col items-center justify-center w-16 h-14 rounded-xl transition-all ${
+                    isActive ? 'text-green-600 bg-green-50' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+                    }`}
+                >
+                    <div className={`${isActive ? 'scale-110 mb-1' : 'mb-1'} transition-transform`}>
+                        <Icon className="w-6 h-6" />
+                    </div>
+                    <span className="text-[10px] font-medium">{label}</span>
+                </button>
+                );
+            };
+
+            return (
+                <div className="max-w-md mx-auto h-screen flex flex-col bg-gray-50 text-gray-800 font-sans shadow-lg overflow-hidden relative">
+                    <header className="bg-green-600 text-white p-4 shadow-md z-10 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                        <IconLeaf className="w-6 h-6" />
+                        <h1 className="font-bold text-lg">Clean Plate</h1>
+                        </div>
+                        {user && (
+                        <div className="text-sm bg-green-700 px-3 py-1 rounded-full flex items-center gap-1 shadow-inner">
+                            <IconAward className="w-4 h-4 text-yellow-300" />
+                            <span className="font-medium">{profile.points || 0} แต้ม</span>
+                        </div>
+                        )}
+                    </header>
+
+                    <main className="flex-1 overflow-y-auto pb-20">
+                        {!user || (isLoading && leaderboard.length === 0) ? (
+                        <div className="flex items-center justify-center h-full">
+                            <div className="animate-spin rounded-full h-10 w-10 border-4 border-green-200 border-t-green-600"></div>
+                        </div>
+                        ) : (
+                        <div className="h-full">
+                            {activeTab === 'home' && renderHome()}
+                            {activeTab === 'submit' && renderSubmit()}
+                            {activeTab === 'leaderboard' && renderLeaderboard()}
+                            {activeTab === 'profile' && renderProfile()}
+                        </div>
+                        )}
+                    </main>
+
+                    <nav className="absolute bottom-0 w-full bg-white border-t border-gray-200 flex justify-around p-2 shadow-[0_-2px_15px_rgba(0,0,0,0.05)] z-10 pb-4">
+                        <NavItem id="home" icon={IconHome} label="หน้าแรก" />
+                        <NavItem id="submit" icon={IconCamera} label="ส่งรูป" />
+                        <NavItem id="leaderboard" icon={IconTrophy} label="อันดับ" />
+                        <NavItem id="profile" icon={IconUserCircle} label="โปรไฟล์" />
+                    </nav>
+                </div>
+            );
+        }
+
+        // --- ทำการ Render แอปลงบนหน้าเว็บ ---
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
