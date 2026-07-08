@@ -48,6 +48,17 @@
         const IconSparkles = ({className}) => <svg className={className} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>;
         const IconTrash = ({className}) => <svg className={className} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>;
 
+        // ฟังก์ชันสร้าง Hash จากไฟล์รูปภาพ เพื่อป้องกันการอัปโหลดรูปซ้ำ
+        const generateHash = (str) => {
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                const char = str.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash = hash & hash; // Convert to 32bit integer
+            }
+            return Math.abs(hash).toString(16);
+        };
+
         // ฟังก์ชันช่วยเหลือสำหรับแปลงลิงก์ Google Drive ให้อ่านได้ใน <img> tag
         const getSafeImageUrl = (url) => {
             if (!url) return '';
@@ -78,6 +89,13 @@
             const [editName, setEditName] = useState('');
             const [saveStatus, setSaveStatus] = useState('');
             
+            // สร้างค่าเริ่มต้นสำหรับวันที่ ให้เป็นเวลาปัจจุบันของเครื่อง
+            const getLocalDatetime = () => {
+                const tzoffset = (new Date()).getTimezoneOffset() * 60000;
+                return (new Date(Date.now() - tzoffset)).toISOString().slice(0, 16);
+            };
+            const [mealDate, setMealDate] = useState(getLocalDatetime());
+
             const fileInputRef = useRef(null);
             const avatarInputRef = useRef(null); // Ref สำหรับเลือกรูปโปรไฟล์
 
@@ -150,6 +168,9 @@
                 const file = event.target.files[0];
                 if (!file) return;
 
+                // ล้างค่า input ทิ้งเผื่อต้องการเลือกไฟล์เดิมอีกครั้งในอนาคต
+                event.target.value = '';
+
                 setIsUploading(true);
                 setUploadState('analyzing');
                 setAiScore(null);
@@ -172,6 +193,16 @@
                         const base64Full = canvas.toDataURL('image/jpeg', 0.6);
                         const base64Data = base64Full.split(',')[1]; 
 
+                        // --- ตรวจสอบรูปซ้ำด้วย Hash ---
+                        const imgHash = generateHash(base64Data);
+                        const savedHashes = JSON.parse(localStorage.getItem('clean_plate_hashes') || '[]');
+                        if (savedHashes.includes(imgHash)) {
+                            alert("❌ ตรวจพบการใช้รูปภาพซ้ำ!\nคุณเคยส่งรูปภาพนี้ไปแล้ว กรุณาใช้รูปภาพอื่นครับ");
+                            setIsUploading(false);
+                            setUploadState('idle');
+                            return;
+                        }
+
                         setTimeout(async () => {
                             const cleanPercent = Math.floor(Math.random() * 51) + 50; 
                             let calculatedPoints = 10;
@@ -182,6 +213,12 @@
                             setAiScore({ percent: cleanPercent, points: calculatedPoints });
                             setUploadState('uploading');
 
+                            const selectedTimestamp = new Date(mealDate).getTime();
+
+                            // เมื่อสำเร็จ ให้จำ Hash ไว้ว่ารูปนี้ถูกใช้แล้ว
+                            savedHashes.push(imgHash);
+                            localStorage.setItem('clean_plate_hashes', JSON.stringify(savedHashes));
+
                             if (isMockMode) {
                                 setTimeout(() => {
                                     const newPoints = (profile.points || 0) + calculatedPoints;
@@ -190,9 +227,9 @@
                                         uid: user.uid,
                                         displayName: profile.displayName,
                                         imageUrl: base64Full,
-                                        timestamp: Date.now(),
+                                        timestamp: selectedTimestamp,
                                         points: calculatedPoints 
-                                    }, ...prev]);
+                                    }, ...prev].sort((a, b) => b.timestamp - a.timestamp));
                                     
                                     setLeaderboard(prev => {
                                         const newLb = prev.filter(p => p.uid !== user.uid);
@@ -215,7 +252,8 @@
                                     image: base64Data,
                                     mimeType: 'image/jpeg',
                                     filename: `plate_${Date.now()}.jpg`,
-                                    points: calculatedPoints 
+                                    points: calculatedPoints,
+                                    timestamp: selectedTimestamp // ส่งเวลามื้ออาหารที่เลือกไปด้วย
                                 };
 
                                 await fetch(GAS_WEB_APP_URL, {
@@ -387,6 +425,12 @@
                     setSaveStatus('เกิดข้อผิดพลาด กรุณาลองใหม่');
                     setTimeout(() => setSaveStatus(''), 3000);
                 }
+            };
+
+            // ฟังก์ชันสำหรับค้นหาชื่อล่าสุดของแต่ละคน
+            const getLatestDisplayName = (uid, originalName) => {
+                const foundUser = leaderboard.find(u => u.uid === uid);
+                return foundUser ? foundUser.displayName : originalName;
             };
 
             // ฟังก์ชันส่งออกข้อมูลเป็น CSV
@@ -568,7 +612,6 @@
                     <input 
                         type="file" 
                         accept="image/*" 
-                        capture="environment"
                         className="hidden" 
                         ref={fileInputRef}
                         onChange={handleImageUpload}
@@ -576,13 +619,28 @@
                     />
                     
                     {uploadState === 'idle' && (
-                        <button 
-                            onClick={() => fileInputRef.current?.click()}
-                            disabled={isUploading}
-                            className="w-full max-w-xs bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-green-200 transition-transform active:scale-95 flex items-center justify-center gap-2 disabled:opacity-70 disabled:active:scale-100"
-                        >
-                            <IconCamera className="w-6 h-6" /> ถ่ายภาพ / สแกนจาน
-                        </button>
+                        <div className="w-full max-w-xs space-y-4">
+                            {/* เพิ่มส่วนตั้งค่าเวลาย้อนหลัง */}
+                            <div className="text-left bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                                <label className="block text-sm font-medium text-gray-700 mb-1">📅 วันที่และเวลารับประทาน</label>
+                                <input 
+                                    type="datetime-local" 
+                                    value={mealDate}
+                                    onChange={(e) => setMealDate(e.target.value)}
+                                    className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-green-500 bg-gray-50"
+                                    disabled={isUploading}
+                                />
+                                <p className="text-xs text-gray-400 mt-1">สามารถเลือกเวลาย้อนหลังได้</p>
+                            </div>
+                            
+                            <button 
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={isUploading}
+                                className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-green-200 transition-transform active:scale-95 flex items-center justify-center gap-2 disabled:opacity-70 disabled:active:scale-100"
+                            >
+                                <IconCamera className="w-6 h-6" /> ถ่ายภาพ / แนบรูปภาพ
+                            </button>
+                        </div>
                     )}
 
                     {isMockMode && uploadState === 'idle' && (
