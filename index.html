@@ -106,15 +106,16 @@
                         body: JSON.stringify(payload)
                     });
                     
+                    // ปรับปรุงการดักจับ Error เพื่อให้แสดงข้อความจริงจาก Google API
                     if (!response.ok) {
-                        throw new Error(`API Error: ${response.status}`);
+                        const errorData = await response.json().catch(() => ({}));
+                        throw new Error(errorData.error?.message || `API Error: ${response.status}`);
                     }
                     
                     const result = await response.json();
                     let text = result.candidates?.[0]?.content?.parts?.[0]?.text;
                     
                     if (text) {
-                        // ทำความสะอาดข้อความ เผื่อ AI ตอบกลับมามี Markdown ```json ... ``` คลุมอยู่
                         text = text.replace(/```json/gi, '').replace(/```/g, '').trim();
                         return JSON.parse(text);
                     }
@@ -122,8 +123,11 @@
                 } catch (error) {
                     console.error("AI Evaluation Error (Attempt " + (retries+1) + "):", error);
                     if (retries === 5) {
-                        // คืนค่า 0% แทน 10% เพื่อให้รู้ว่าเกิด Error และได้ 0 แต้มไปเลย
-                        return { percent: 0, reason: "ระบบ AI ขัดข้อง ไม่สามารถประเมินภาพได้อย่างละเอียด หรือคุณยังไม่ได้ใส่ API Key ในโค้ด" };
+                        // คืนค่าข้อความ Error ที่แท้จริงกลับไปแสดงที่หน้า UI
+                        return { 
+                            percent: 0, 
+                            reason: `ระบบ AI ขัดข้อง (${error.message}) โปรดตรวจสอบ API Key หรือการตั้งค่าการเข้าถึง` 
+                        };
                     }
                     await new Promise(resolve => setTimeout(resolve, delays[retries]));
                     retries++;
