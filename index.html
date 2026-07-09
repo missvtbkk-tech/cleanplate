@@ -59,6 +59,56 @@
             return Math.abs(hash).toString(16);
         };
 
+        // ฟังก์ชันของแท้: ส่งภาพไปให้ AI (Gemini Vision) วิเคราะห์เศษอาหาร
+        const analyzeImageWithGemini = async (base64Data) => {
+            const apiKey = ""; // Canvas environment จะใส่ Key ให้โดยอัตโนมัติ
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            
+            const payload = {
+                contents: [{
+                    role: "user",
+                    parts: [
+                        { text: "วิเคราะห์ภาพจาน ชาม หรือภาชนะใส่อาหารนี้ ว่าทานหมดเกลี้ยงและสะอาดแค่ไหน?\n- ถ้าสะอาดมาก ไม่มีเศษอาหาร (มีแค่คราบรอยเปื้อน) ให้ 90-100%\n- ถ้ามีเศษอาหารชิ้นใหญ่ กระดูก หรือมีน้ำแกง/น้ำซุปเหลืออยู่ ให้ลดเปอร์เซ็นต์ลงอย่างมาก (เช่นเหลือ 20-70% ตามปริมาณที่เหลือ)\n- ถ้าเป็นภาพที่ไม่มีจานอาหารเลย ให้ 0%\nตอบกลับเป็น JSON format ที่มี 2 ค่าคือ 'percent' (ตัวเลข 0-100) และ 'reason' (เหตุผลสั้นๆ เป็นภาษาไทยอธิบายว่าเห็นอะไร)" },
+                        { inlineData: { mimeType: "image/jpeg", data: base64Data } }
+                    ]
+                }],
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            percent: { type: "INTEGER" },
+                            reason: { type: "STRING" }
+                        }
+                    }
+                }
+            };
+
+            let retries = 0;
+            const delays = [1000, 2000, 4000, 8000, 16000];
+
+            while (retries <= 5) {
+                try {
+                    const response = await fetch(url, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(payload)
+                    });
+                    if (!response.ok) throw new Error("API Error");
+                    const result = await response.json();
+                    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (text) return JSON.parse(text);
+                    throw new Error("No text in response");
+                } catch (error) {
+                    if (retries === 5) {
+                        return { percent: 10, reason: "ระบบ AI ขัดข้อง ไม่สามารถประเมินภาพได้อย่างละเอียด" };
+                    }
+                    await new Promise(resolve => setTimeout(resolve, delays[retries]));
+                    retries++;
+                }
+            }
+        };
+
         // ฟังก์ชันช่วยเหลือสำหรับแปลงลิงก์ Google Drive ให้อ่านได้ใน <img> tag
         const getSafeImageUrl = (url) => {
             if (!url) return '';
@@ -79,6 +129,7 @@
             const [user, setUser] = useState(null);
             const [profile, setProfile] = useState({ displayName: 'พนักงานนิรนาม', points: 0, avatarUrl: '' });
             const [activeTab, setActiveTab] = useState('home');
+            const [leaderboardType, setLeaderboardType] = useState('points'); // เพิ่ม state สลับโหมดจัดอันดับ ('points' หรือ 'count')
             const [leaderboard, setLeaderboard] = useState([]);
             const [submissions, setSubmissions] = useState([]);
             const [isUploading, setIsUploading] = useState(false);
@@ -203,14 +254,17 @@
                             return;
                         }
 
-                        setTimeout(async () => {
-                            const cleanPercent = Math.floor(Math.random() * 51) + 50; 
+                        // --- นำภาพส่งให้ AI ของจริง (Gemini) วิเคราะห์ ---
+                        try {
+                            const aiResult = await analyzeImageWithGemini(base64Data);
+                            const cleanPercent = aiResult.percent; 
+                            
                             let calculatedPoints = 10;
                             if (cleanPercent < 60) calculatedPoints = 4;
                             else if (cleanPercent < 80) calculatedPoints = 7;
                             else calculatedPoints = 10;
                             
-                            setAiScore({ percent: cleanPercent, points: calculatedPoints });
+                            setAiScore({ percent: cleanPercent, points: calculatedPoints, reason: aiResult.reason });
                             setUploadState('uploading');
 
                             const selectedTimestamp = new Date(mealDate).getTime();
@@ -253,7 +307,7 @@
                                     mimeType: 'image/jpeg',
                                     filename: `plate_${Date.now()}.jpg`,
                                     points: calculatedPoints,
-                                    timestamp: selectedTimestamp // ส่งเวลามื้ออาหารที่เลือกไปด้วย
+                                    timestamp: selectedTimestamp 
                                 };
 
                                 await fetch(GAS_WEB_APP_URL, {
@@ -272,7 +326,12 @@
                                 setIsUploading(false);
                                 setUploadState('idle');
                             }
-                        }, 2500); 
+                        } catch (error) {
+                            console.error("AI error", error);
+                            setIsUploading(false);
+                            setUploadState('idle');
+                            alert("เกิดข้อผิดพลาดในการวิเคราะห์รูปภาพ กรุณาลองใหม่");
+                        }
                     };
                     img.src = e.target.result;
                 };
@@ -433,21 +492,42 @@
                 return foundUser ? foundUser.displayName : originalName;
             };
 
-            // ฟังก์ชันส่งออกข้อมูลเป็น CSV
+            // ฟังก์ชันคำนวณและจัดเตรียมข้อมูลตารางผู้นำ โดยรวมจำนวนครั้งเข้ามาด้วย
+            const getProcessedLeaderboard = () => {
+                return leaderboard.map(u => ({
+                    ...u,
+                    // นับจำนวนรูปภาพที่คนนี้ส่งเข้ามา
+                    submissionCount: submissions.filter(s => s.uid === u.uid).length
+                })).sort((a, b) => {
+                    if (leaderboardType === 'count') {
+                        // ถ้าเลือกดูตามจำนวนครั้ง ให้เรียงตามจำนวนครั้งก่อน ถ้าเท่ากันให้ดูคะแนน
+                        if (b.submissionCount !== a.submissionCount) return b.submissionCount - a.submissionCount;
+                        return (b.points || 0) - (a.points || 0);
+                    }
+                    // ค่าเริ่มต้น: เรียงตามคะแนน ถ้าคะแนนเท่ากันให้ดูจำนวนครั้ง
+                    if ((b.points || 0) !== (a.points || 0)) return (b.points || 0) - (a.points || 0);
+                    return b.submissionCount - a.submissionCount;
+                });
+            };
+
+            // ฟังก์ชันส่งออกข้อมูลเป็น CSV (อัปเดตให้มีจำนวนครั้งที่ส่ง)
             const exportToCSV = () => {
-                if (leaderboard.length === 0) {
+                const currentLeaderboard = getProcessedLeaderboard();
+                
+                if (currentLeaderboard.length === 0) {
                     alert("ยังไม่มีข้อมูลสำหรับส่งออก");
                     return;
                 }
                 
                 let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
-                csvContent += "อันดับ,ชื่อผู้ใช้งาน,คะแนนสะสม\n";
+                csvContent += "อันดับ,ชื่อผู้ใช้งาน,คะแนนสะสม,จำนวนครั้งที่ส่ง\n";
 
-                leaderboard.forEach((u, index) => {
+                currentLeaderboard.forEach((u, index) => {
                     const rank = index + 1;
                     const name = u.displayName ? u.displayName.replace(/"/g, '""') : 'พนักงานนิรนาม';
                     const points = u.points || 0;
-                    csvContent += `${rank},"${name}",${points}\n`;
+                    const count = u.submissionCount || 0;
+                    csvContent += `${rank},"${name}",${points},${count}\n`;
                 });
 
                 const encodedUri = encodeURI(csvContent);
@@ -596,8 +676,14 @@
                         <div className="flex flex-col items-center justify-center space-y-4 py-4 w-full">
                             <div className="bg-gradient-to-r from-blue-500 to-indigo-600 w-full rounded-2xl p-6 text-white shadow-lg">
                                 <IconSparkles className="w-10 h-10 mx-auto mb-2 text-blue-200" />
-                                <h3 className="text-lg font-medium opacity-90">ผลการประเมิน</h3>
+                                <h3 className="text-lg font-medium opacity-90">ผลการประเมินจาก AI</h3>
                                 <div className="text-3xl font-bold mt-1 mb-2">ความสะอาด {aiScore.percent}%</div>
+                                
+                                {/* เพิ่มส่วนแสดงเหตุผลที่ AI ประเมิน */}
+                                <div className="bg-white/10 p-3 rounded-lg text-sm mb-3 font-medium shadow-inner italic">
+                                    "{aiScore.reason}"
+                                </div>
+                                
                                 <div className="bg-white/20 rounded-lg p-2 backdrop-blur-sm inline-block px-4">
                                     ได้รับ <span className="font-bold text-yellow-300 text-xl">{aiScore.points}</span> แต้ม
                                 </div>
@@ -651,51 +737,86 @@
                 </div>
             );
 
-            const renderLeaderboard = () => (
-                <div className="p-4 space-y-4">
-                    <div className="bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl p-6 text-white text-center shadow-md relative">
-                        <button 
-                            onClick={exportToCSV}
-                            className="absolute top-4 right-4 bg-white/20 hover:bg-white/30 p-2 rounded-full transition-colors"
-                            title="ดาวน์โหลดข้อมูลอันดับ (CSV)"
-                        >
-                            <IconDownload className="w-5 h-5 text-white" />
-                        </button>
-                        <IconTrophy className="w-12 h-12 mx-auto mb-2 text-yellow-300" />
-                        <h2 className="text-xl font-bold">กระดานผู้นำ</h2>
-                        <p className="opacity-90 text-sm">ใครคือสุดยอดนักรักษ์โลกประจำเดือนนี้?</p>
-                    </div>
+            const renderLeaderboard = () => {
+                const currentLeaderboard = getProcessedLeaderboard();
 
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                        {leaderboard.length === 0 && !isLoading && <p className="text-center p-6 text-gray-500">ยังไม่มีข้อมูลคะแนน</p>}
-                        {leaderboard.map((u, index) => (
-                        <div key={u.uid} className={`flex items-center p-4 border-b border-gray-50 last:border-0 ${user?.uid === u.uid ? 'bg-green-50' : ''}`}>
-                            <div className="w-8 font-bold text-gray-400 text-center shrink-0">
-                            {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`}
-                            </div>
-                            
-                            {/* แสดงรูปโปรไฟล์ในกระดานผู้นำ */}
-                            <div className="w-10 h-10 ml-2 bg-green-100 rounded-full flex items-center justify-center text-green-700 font-bold text-sm uppercase overflow-hidden shrink-0 shadow-inner">
-                                {u.avatarUrl ? (
-                                    <img src={getSafeImageUrl(u.avatarUrl)} className="w-full h-full object-cover" alt="avatar" />
-                                ) : (
-                                    u.displayName?.charAt(0) || '?'
-                                )}
-                            </div>
-
-                            <div className="flex-1 ml-3 truncate">
-                            <p className={`font-medium ${user?.uid === u.uid ? 'text-green-700' : 'text-gray-800'} truncate`}>
-                                {u.displayName} {user?.uid === u.uid && '(คุณ)'}
-                            </p>
-                            </div>
-                            <div className="font-bold text-green-600 flex items-center gap-1 shrink-0 ml-2">
-                            {u.points || 0} <span className="text-xs font-normal text-gray-500">แต้ม</span>
-                            </div>
+                return (
+                    <div className="p-4 space-y-4">
+                        <div className="bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl p-6 text-white text-center shadow-md relative">
+                            <button 
+                                onClick={exportToCSV}
+                                className="absolute top-4 right-4 bg-white/20 hover:bg-white/30 p-2 rounded-full transition-colors"
+                                title="ดาวน์โหลดข้อมูลอันดับ (CSV)"
+                            >
+                                <IconDownload className="w-5 h-5 text-white" />
+                            </button>
+                            <IconTrophy className="w-12 h-12 mx-auto mb-2 text-yellow-300" />
+                            <h2 className="text-xl font-bold">กระดานผู้นำ</h2>
+                            <p className="opacity-90 text-sm">ใครคือสุดยอดนักรักษ์โลกประจำเดือนนี้?</p>
                         </div>
-                        ))}
+
+                        {/* เมนูแท็บเพื่อสลับการจัดอันดับ */}
+                        <div className="flex bg-white rounded-xl p-1 shadow-sm border border-gray-100">
+                            <button 
+                                onClick={() => setLeaderboardType('points')}
+                                className={`flex-1 py-2.5 text-sm font-bold rounded-lg transition-colors ${leaderboardType === 'points' ? 'bg-green-100 text-green-700 shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}
+                            >
+                                🏆 ตามคะแนน
+                            </button>
+                            <button 
+                                onClick={() => setLeaderboardType('count')}
+                                className={`flex-1 py-2.5 text-sm font-bold rounded-lg transition-colors ${leaderboardType === 'count' ? 'bg-green-100 text-green-700 shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}
+                            >
+                                📸 ตามจำนวนครั้ง
+                            </button>
+                        </div>
+
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                            {currentLeaderboard.length === 0 && !isLoading && <p className="text-center p-6 text-gray-500">ยังไม่มีข้อมูลคะแนน</p>}
+                            {currentLeaderboard.map((u, index) => (
+                            <div key={u.uid} className={`flex items-center p-4 border-b border-gray-50 last:border-0 ${user?.uid === u.uid ? 'bg-green-50' : ''}`}>
+                                <div className="w-8 font-bold text-gray-400 text-center shrink-0">
+                                {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`}
+                                </div>
+                                
+                                {/* แสดงรูปโปรไฟล์ในกระดานผู้นำ */}
+                                <div className="w-10 h-10 ml-2 bg-green-100 rounded-full flex items-center justify-center text-green-700 font-bold text-sm uppercase overflow-hidden shrink-0 shadow-inner">
+                                    {u.avatarUrl ? (
+                                        <img src={getSafeImageUrl(u.avatarUrl)} className="w-full h-full object-cover" alt="avatar" />
+                                    ) : (
+                                        u.displayName?.charAt(0) || '?'
+                                    )}
+                                </div>
+
+                                <div className="flex-1 ml-3 truncate">
+                                <p className={`font-medium ${user?.uid === u.uid ? 'text-green-700' : 'text-gray-800'} truncate`}>
+                                    {u.displayName} {user?.uid === u.uid && '(คุณ)'}
+                                </p>
+                                </div>
+                                
+                                <div className="font-bold text-green-600 flex flex-col items-end shrink-0 ml-2">
+                                    {leaderboardType === 'points' ? (
+                                        <>
+                                            <div className="flex items-center gap-1">
+                                                {u.points || 0} <span className="text-xs font-normal text-gray-500">แต้ม</span>
+                                            </div>
+                                            <div className="text-[10px] text-gray-400 font-normal">{u.submissionCount} ครั้ง</div>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div className="flex items-center gap-1">
+                                                {u.submissionCount || 0} <span className="text-xs font-normal text-gray-500">ครั้ง</span>
+                                            </div>
+                                            <div className="text-[10px] text-gray-400 font-normal">{u.points || 0} แต้ม</div>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                            ))}
+                        </div>
                     </div>
-                </div>
-            );
+                );
+            };
 
             const renderProfile = () => (
                 <div className="p-4 space-y-6">
