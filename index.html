@@ -61,11 +61,13 @@
 
         // ฟังก์ชันของแท้: ส่งภาพไปให้ AI (Gemini Vision) วิเคราะห์เศษอาหาร
         const analyzeImageWithGemini = async (base64Data) => {
-            // 🛑 สำคัญมาก: นำ Gemini API Key มาใส่ในเครื่องหมายคำพูดด้านล่างนี้
-            const apiKey = "AQ.Ab8RN6K" + "b16_187wWf6L-d8152eu" + "e7qNn9-CH8dXU4KvKW-eZ1Q"; 
             
-            // เปลี่ยนชื่อโมเดลเป็น gemini-1.5-flash-latest เพื่อความเสถียรสูงสุด
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+            // นำ API Key ที่ถูกต้องมาใส่ และใช้ .replace เพื่อลบช่องว่างที่อาจติดมาตอนก๊อปปี้ออกให้หมด
+            const rawApiKey = "AQ.Ab8RN6K" + "b16_187wWf6L-d8152eu" + "e7qNn9-CH8dXU4KvKW-eZ1Q"; 
+            const apiKey = rawApiKey.replace(/\s/g, '');
+            
+            // 🛑 แก้ไขจุดสำคัญ: เปลี่ยนจาก /v1beta/ เป็น /v1/ เพื่อใช้เวอร์ชันเต็มที่เสถียรที่สุด
+            const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
             
             const payload = {
                 contents: [{
@@ -505,7 +507,7 @@
                         headers: { 'Content-Type': 'text/plain;charset=utf-8' }
                     });
 
-                    setSaveStatus('บันทึกชื่อสำเร็จ!');
+                    setSaveStatus('บันึกชื่อสำเร็จ!');
                     setProfile(prev => ({ ...prev, displayName: editName.trim() }));
                     await fetchData();
                     setTimeout(() => setSaveStatus(''), 3000);
