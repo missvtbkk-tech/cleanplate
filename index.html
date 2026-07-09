@@ -130,6 +130,7 @@
             const [profile, setProfile] = useState({ displayName: 'พนักงานนิรนาม', points: 0, avatarUrl: '' });
             const [activeTab, setActiveTab] = useState('home');
             const [leaderboardType, setLeaderboardType] = useState('points'); // เพิ่ม state สลับโหมดจัดอันดับ ('points' หรือ 'count')
+            const [timeFilter, setTimeFilter] = useState('all'); // state กรองเวลา (all, this_month, last_month, this_year, last_year)
             const [leaderboard, setLeaderboard] = useState([]);
             const [submissions, setSubmissions] = useState([]);
             const [isUploading, setIsUploading] = useState(false);
@@ -492,40 +493,83 @@
                 return foundUser ? foundUser.displayName : originalName;
             };
 
-            // ฟังก์ชันคำนวณและจัดเตรียมข้อมูลตารางผู้นำ โดยรวมจำนวนครั้งเข้ามาด้วย
+            // ฟังก์ชันช่วยคัดกรองข้อมูลตามช่วงเวลาที่เลือก
+            const filterSubmissionsByTime = (subs, filterType) => {
+                if (filterType === 'all') return subs;
+                
+                const now = new Date();
+                const currentYear = now.getFullYear();
+                const currentMonth = now.getMonth();
+                
+                return subs.filter(sub => {
+                    const subDate = new Date(sub.timestamp);
+                    const subYear = subDate.getFullYear();
+                    const subMonth = subDate.getMonth();
+                    
+                    if (filterType === 'this_month') {
+                        return subYear === currentYear && subMonth === currentMonth;
+                    }
+                    if (filterType === 'last_month') {
+                        const lastMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+                        const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+                        return subYear === lastMonthYear && subMonth === lastMonth;
+                    }
+                    if (filterType === 'this_year') {
+                        return subYear === currentYear;
+                    }
+                    if (filterType === 'last_year') {
+                        return subYear === currentYear - 1;
+                    }
+                    return true;
+                });
+            };
+
+            // ฟังก์ชันคำนวณและจัดเตรียมข้อมูลตารางผู้นำ โดยคำนวณจากช่วงเวลาที่เลือก
             const getProcessedLeaderboard = () => {
-                return leaderboard.map(u => ({
-                    ...u,
-                    // นับจำนวนรูปภาพที่คนนี้ส่งเข้ามา
-                    submissionCount: submissions.filter(s => s.uid === u.uid).length
-                })).sort((a, b) => {
+                const filteredSubs = filterSubmissionsByTime(submissions, timeFilter);
+
+                return leaderboard.map(u => {
+                    // หาผลงานของ user คนนี้เฉพาะในช่วงเวลาที่กรองมา
+                    const userSubs = filteredSubs.filter(s => s.uid === u.uid);
+                    // รวมคะแนนที่ได้จากเฉพาะช่วงเวลานี้
+                    const periodPoints = userSubs.reduce((sum, s) => sum + (Number(s.points) || 10), 0);
+                    
+                    return {
+                        ...u,
+                        // ถ้าเป็น all-time ให้ดึงคะแนนรวมจากฐานข้อมูลเพื่อความชัวร์ (เพราะบางคนอาจมีคะแนนตั้งต้น) ถ้าเป็นช่วงอื่นให้ใช้ที่บวกใหม่
+                        calculatedPoints: timeFilter === 'all' ? (u.points || 0) : periodPoints,
+                        submissionCount: userSubs.length
+                    };
+                })
+                .filter(u => timeFilter === 'all' || u.calculatedPoints > 0 || u.submissionCount > 0) // ซ่อนคนไม่มีผลงาน หากไม่ได้เลือก all
+                .sort((a, b) => {
                     if (leaderboardType === 'count') {
                         // ถ้าเลือกดูตามจำนวนครั้ง ให้เรียงตามจำนวนครั้งก่อน ถ้าเท่ากันให้ดูคะแนน
                         if (b.submissionCount !== a.submissionCount) return b.submissionCount - a.submissionCount;
-                        return (b.points || 0) - (a.points || 0);
+                        return (b.calculatedPoints || 0) - (a.calculatedPoints || 0);
                     }
                     // ค่าเริ่มต้น: เรียงตามคะแนน ถ้าคะแนนเท่ากันให้ดูจำนวนครั้ง
-                    if ((b.points || 0) !== (a.points || 0)) return (b.points || 0) - (a.points || 0);
+                    if ((b.calculatedPoints || 0) !== (a.calculatedPoints || 0)) return (b.calculatedPoints || 0) - (a.calculatedPoints || 0);
                     return b.submissionCount - a.submissionCount;
                 });
             };
 
-            // ฟังก์ชันส่งออกข้อมูลเป็น CSV (อัปเดตให้มีจำนวนครั้งที่ส่ง)
+            // ฟังก์ชันส่งออกข้อมูลเป็น CSV (อัปเดตให้ดึงข้อมูลตามช่วงเวลาที่กรองด้วย)
             const exportToCSV = () => {
                 const currentLeaderboard = getProcessedLeaderboard();
                 
                 if (currentLeaderboard.length === 0) {
-                    alert("ยังไม่มีข้อมูลสำหรับส่งออก");
+                    alert("ยังไม่มีข้อมูลสำหรับส่งออกในช่วงเวลานี้");
                     return;
                 }
                 
                 let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
-                csvContent += "อันดับ,ชื่อผู้ใช้งาน,คะแนนสะสม,จำนวนครั้งที่ส่ง\n";
+                csvContent += `อันดับ,ชื่อผู้ใช้งาน,คะแนนสะสม (${timeFilter}),จำนวนครั้งที่ส่ง\n`;
 
                 currentLeaderboard.forEach((u, index) => {
                     const rank = index + 1;
                     const name = u.displayName ? u.displayName.replace(/"/g, '""') : 'พนักงานนิรนาม';
-                    const points = u.points || 0;
+                    const points = u.calculatedPoints || 0;
                     const count = u.submissionCount || 0;
                     csvContent += `${rank},"${name}",${points},${count}\n`;
                 });
@@ -534,7 +578,7 @@
                 const link = document.createElement("a");
                 link.setAttribute("href", encodedUri);
                 const dateStr = new Date().toISOString().slice(0,10);
-                link.setAttribute("download", `clean_plate_ranking_${dateStr}.csv`);
+                link.setAttribute("download", `clean_plate_ranking_${timeFilter}_${dateStr}.csv`);
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
@@ -752,7 +796,20 @@
                             </button>
                             <IconTrophy className="w-12 h-12 mx-auto mb-2 text-yellow-300" />
                             <h2 className="text-xl font-bold">กระดานผู้นำ</h2>
-                            <p className="opacity-90 text-sm">ใครคือสุดยอดนักรักษ์โลกประจำเดือนนี้?</p>
+                            <p className="opacity-90 text-sm">ใครคือสุดยอดนักรักษ์โลก?</p>
+                            
+                            {/* เมนู Dropdown เลือกกรองเวลา */}
+                            <select 
+                                value={timeFilter} 
+                                onChange={(e) => setTimeFilter(e.target.value)}
+                                className="w-full mt-4 p-2 rounded-lg text-sm text-gray-800 bg-white/90 border-0 outline-none focus:ring-2 focus:ring-green-300 shadow-inner"
+                            >
+                                <option value="all">🏆 ตลอดกาล (All Time)</option>
+                                <option value="this_month">📅 เดือนนี้</option>
+                                <option value="last_month">📅 เดือนก่อนหน้า</option>
+                                <option value="this_year">📆 ปีนี้</option>
+                                <option value="last_year">📆 ปีก่อนหน้า</option>
+                            </select>
                         </div>
 
                         {/* เมนูแท็บเพื่อสลับการจัดอันดับ */}
@@ -772,7 +829,7 @@
                         </div>
 
                         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                            {currentLeaderboard.length === 0 && !isLoading && <p className="text-center p-6 text-gray-500">ยังไม่มีข้อมูลคะแนน</p>}
+                            {currentLeaderboard.length === 0 && !isLoading && <p className="text-center p-6 text-gray-500">ยังไม่มีข้อมูลในช่วงเวลานี้</p>}
                             {currentLeaderboard.map((u, index) => (
                             <div key={u.uid} className={`flex items-center p-4 border-b border-gray-50 last:border-0 ${user?.uid === u.uid ? 'bg-green-50' : ''}`}>
                                 <div className="w-8 font-bold text-gray-400 text-center shrink-0">
@@ -798,7 +855,7 @@
                                     {leaderboardType === 'points' ? (
                                         <>
                                             <div className="flex items-center gap-1">
-                                                {u.points || 0} <span className="text-xs font-normal text-gray-500">แต้ม</span>
+                                                {u.calculatedPoints || 0} <span className="text-xs font-normal text-gray-500">แต้ม</span>
                                             </div>
                                             <div className="text-[10px] text-gray-400 font-normal">{u.submissionCount} ครั้ง</div>
                                         </>
@@ -807,7 +864,7 @@
                                             <div className="flex items-center gap-1">
                                                 {u.submissionCount || 0} <span className="text-xs font-normal text-gray-500">ครั้ง</span>
                                             </div>
-                                            <div className="text-[10px] text-gray-400 font-normal">{u.points || 0} แต้ม</div>
+                                            <div className="text-[10px] text-gray-400 font-normal">{u.calculatedPoints || 0} แต้ม</div>
                                         </>
                                     )}
                                 </div>
