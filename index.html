@@ -83,21 +83,13 @@
 2. คราบ vs. อาหารเหลือ: แยกแยะระหว่าง "คราบอาหารที่ติดจาน (Stains)" (หักคะแนนน้อย) กับ "อาหารที่ตักทานต่อได้ (Leftovers)" (หักคะแนนเยอะ)
 3. หากมีหลายภาชนะในภาพ: ให้ประเมินภาชนะที่เหลืออาหารเยอะที่สุดเป็นหลัก
 
-ตอบกลับเป็น JSON format ที่มี 2 ค่าเท่านั้น:
-1. 'percent': ตัวเลขจำนวนเต็ม 0 ถึง 100 ตามเกณฑ์ข้างต้น
-2. 'reason': คำอธิบายสั้นๆ (ภาษาไทย ไม่เกิน 2 ประโยค) อธิบายว่าคุณเห็นอะไรในภาพ ทำไมถึงให้คะแนนเท่านี้ (เช่น "ทานหมดเกลี้ยง มีเพียงคราบซอสเล็กน้อย" หรือ "ยังมีน้ำแกงและเศษเนื้อหมูเหลืออยู่ก้นชาม")` },
+ส่งผลลัพธ์เป็นรูปแบบ JSON เท่านั้น ห้ามมีข้อความอื่นปน โดยใช้โครงสร้างดังนี้:
+{"percent": ตัวเลข0ถึง100, "reason": "คำอธิบายภาษาไทยสั้นๆ ไม่เกิน 2 ประโยค"}` },
                         { inlineData: { mimeType: "image/jpeg", data: base64Data } }
                     ]
                 }],
                 generationConfig: {
-                    responseMimeType: "application/json",
-                    responseSchema: {
-                        type: "OBJECT",
-                        properties: {
-                            percent: { type: "INTEGER" },
-                            reason: { type: "STRING" }
-                        }
-                    }
+                    temperature: 0.1
                 }
             };
 
@@ -111,14 +103,25 @@
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify(payload)
                     });
-                    if (!response.ok) throw new Error("API Error");
+                    
+                    if (!response.ok) {
+                        throw new Error(`API Error: ${response.status}`);
+                    }
+                    
                     const result = await response.json();
-                    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
-                    if (text) return JSON.parse(text);
+                    let text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    
+                    if (text) {
+                        // ทำความสะอาดข้อความ เผื่อ AI ตอบกลับมามี Markdown ```json ... ``` คลุมอยู่
+                        text = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+                        return JSON.parse(text);
+                    }
                     throw new Error("No text in response");
                 } catch (error) {
+                    console.error("AI Evaluation Error (Attempt " + (retries+1) + "):", error);
                     if (retries === 5) {
-                        return { percent: 10, reason: "ระบบ AI ขัดข้อง ไม่สามารถประเมินภาพได้อย่างละเอียด" };
+                        // คืนค่า 0% แทน 10% เพื่อให้รู้ว่าเกิด Error และได้ 0 แต้มไปเลย
+                        return { percent: 0, reason: "ระบบ AI ขัดข้อง ไม่สามารถประเมินภาพได้อย่างละเอียด (" + error.message + ")" };
                     }
                     await new Promise(resolve => setTimeout(resolve, delays[retries]));
                     retries++;
@@ -278,7 +281,9 @@
                             const cleanPercent = aiResult.percent; 
                             
                             let calculatedPoints = 10;
-                            if (cleanPercent < 60) calculatedPoints = 4;
+                            // แก้ไขจุดให้คะแนน หากเป็น 0% จะได้ 0 แต้มไปเลย
+                            if (cleanPercent === 0) calculatedPoints = 0;
+                            else if (cleanPercent < 60) calculatedPoints = 4;
                             else if (cleanPercent < 80) calculatedPoints = 7;
                             else calculatedPoints = 10;
                             
