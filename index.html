@@ -61,10 +61,11 @@
 
         // ฟังก์ชันของแท้: ส่งภาพไปให้ AI (Gemini Vision) วิเคราะห์เศษอาหาร
         const analyzeImageWithGemini = async (base64Data) => {
-            // 🛑 สำคัญมาก: นำ Gemini API Key มาใส่ในเครื่องหมายคำพูดด้านล่างนี้ (ขอได้ฟรีที่ https://aistudio.google.com/app/apikey)
+            // 🛑 สำคัญมาก: นำ Gemini API Key มาใส่ในเครื่องหมายคำพูดด้านล่างนี้
             const apiKey = "AQ.Ab8RN6K" + "b16_187wWf6L-d8152eu" + "e7qNn9-CH8dXU4KvKW-eZ1Q"; 
             
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+            // เปลี่ยนชื่อโมเดลเป็น gemini-1.5-flash-latest เพื่อความเสถียรสูงสุด
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
             
             const payload = {
                 contents: [{
