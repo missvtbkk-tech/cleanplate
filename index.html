@@ -61,7 +61,9 @@
 
         // ฟังก์ชันของแท้: ส่งภาพไปให้ AI (Gemini Vision) วิเคราะห์เศษอาหาร
         const analyzeImageWithGemini = async (base64Data) => {
-            const apiKey = ""; // Canvas environment จะใส่ Key ให้โดยอัตโนมัติ
+            // 🛑 สำคัญมาก: นำ Gemini API Key มาใส่ในเครื่องหมายคำพูดด้านล่างนี้ (ขอได้ฟรีที่ https://aistudio.google.com/app/apikey)
+            const apiKey = "AQ.Ab8RN6KDoD6B0MypZZtFvpw5VYG7C0rC3Ue8Em44JUOCZKC1fA"; 
+            
             const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
             
             const payload = {
@@ -121,7 +123,7 @@
                     console.error("AI Evaluation Error (Attempt " + (retries+1) + "):", error);
                     if (retries === 5) {
                         // คืนค่า 0% แทน 10% เพื่อให้รู้ว่าเกิด Error และได้ 0 แต้มไปเลย
-                        return { percent: 0, reason: "ระบบ AI ขัดข้อง ไม่สามารถประเมินภาพได้อย่างละเอียด (" + error.message + ")" };
+                        return { percent: 0, reason: "ระบบ AI ขัดข้อง ไม่สามารถประเมินภาพได้อย่างละเอียด หรือคุณยังไม่ได้ใส่ API Key ในโค้ด" };
                     }
                     await new Promise(resolve => setTimeout(resolve, delays[retries]));
                     retries++;
